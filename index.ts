@@ -123,14 +123,44 @@ const AIRBNB_TOOLS = [
 ] as const;
 
 // Utility functions
-// Utility functions
-const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
+// Browser fingerprinting constants
+const DESKTOP_USER_AGENTS = [
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36 Edg/123.0.0.0",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Safari/605.1.15",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0"
+];
+
+const randomUserAgent = () => DESKTOP_USER_AGENTS[Math.floor(Math.random() * DESKTOP_USER_AGENTS.length)];
+
+// Create a consistent user agent for the entire session
+const SESSION_USER_AGENT = randomUserAgent();
+
+// Common HTTP headers that real browsers send
+const COMMON_HEADERS = {
+  "User-Agent": SESSION_USER_AGENT,
+  "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+  "Accept-Language": "en-US,en;q=0.9",
+  "Accept-Encoding": "gzip, deflate, br",
+  "Connection": "keep-alive",
+  "Sec-Ch-Ua": '"Chromium";v="123", "Google Chrome";v="123", "Not:A-Brand";v="99"',
+  "Sec-Ch-Ua-Mobile": "?0",
+  "Sec-Ch-Ua-Platform": '"Windows"',
+  "Sec-Fetch-Dest": "document",
+  "Sec-Fetch-Mode": "navigate",
+  "Sec-Fetch-Site": "none",
+  "Sec-Fetch-User": "?1",
+  "Upgrade-Insecure-Requests": "1",
+  "Cache-Control": "max-age=0"
+};
+
 const BASE_URL = "https://www.airbnb.com";
 
 const args = process.argv.slice(2);
 const IGNORE_ROBOTS_TXT = args.includes("--ignore-robots-txt");
 
-const robotsErrorMessage = "This path is disallowed by Airbnb's robots.txt to this User-agent. You may or may not want to run the server with '--ignore-robots-txt' args"
+const robotsErrorMessage = "This path is disallowed by Airbnb's robots.txt to this User-agent. You may or may not want to run the server with '--ignore-robots-txt' args";
 let robotsTxtContent = "";
 
 // Simple robots.txt fetch
@@ -140,7 +170,7 @@ async function fetchRobotsTxt() {
   }
 
   try {
-    const response = await fetchWithUserAgent(`${BASE_URL}/robots.txt`);
+    const response = await fetchWithBrowserHeaders(`${BASE_URL}/robots.txt`);
     robotsTxtContent = await response.text();
   } catch (error) {
     console.error("Error fetching robots.txt:", error);
@@ -154,7 +184,7 @@ function isPathAllowed(path: string) {
   }
 
   const robots = robotsParser(path, robotsTxtContent);
-  if (!robots.isAllowed(path, USER_AGENT)) {
+  if (!robots.isAllowed(path, SESSION_USER_AGENT)) {
     console.error(robotsErrorMessage);
     return false;
   }
@@ -162,13 +192,62 @@ function isPathAllowed(path: string) {
   return true;
 }
 
-async function fetchWithUserAgent(url: string) {
-  return fetch(url, {
+// Cookie jar implementation
+const cookieJar = new Map();
+
+function parseCookies(response: any) {
+  const cookieHeader = response.headers.raw()['set-cookie'] || [];
+  
+  for (const cookieString of cookieHeader) {
+    const [mainPart] = cookieString.split(';');
+    const [name, value] = mainPart.split('=');
+    
+    if (name && value) {
+      cookieJar.set(name.trim(), value.trim());
+    }
+  }
+}
+
+function getCookieString() {
+  return Array.from(cookieJar.entries())
+    .map(([name, value]) => `${name}=${value}`)
+    .join('; ');
+}
+
+// Enhanced fetch function with browser-like headers
+async function fetchWithBrowserHeaders(url: string, options: any = {}) {
+  // Create a new URL object to extract the hostname
+  const urlObj = new URL(url);
+  
+  // Add referer only for non-initial requests
+  const headers = {
+    ...COMMON_HEADERS,
+    "Host": urlObj.hostname,
+    "Referer": urlObj.origin,
+    "Origin": urlObj.origin,
+  };
+
+  // Add cookies if we have them
+  const cookieString = getCookieString();
+  if (cookieString) {
+    headers["Cookie"] = cookieString;
+  }
+
+  // Add a slight delay to mimic human behavior (100-300ms)
+  await new Promise(resolve => setTimeout(resolve, 100 + Math.random() * 200));
+
+  const response = await fetch(url, {
+    ...options,
     headers: {
-      "User-Agent": USER_AGENT,
-      "Accept-Language": "en-US,en;q=0.9",
-    },
+      ...headers,
+      ...(options.headers || {})
+    }
   });
+
+  // Save cookies for future requests
+  parseCookies(response);
+  
+  return response;
 }
 
 // API handlers
@@ -216,12 +295,6 @@ async function handleAirbnbSearch(params: any) {
   if (minPrice) searchUrl.searchParams.append("price_min", minPrice.toString());
   if (maxPrice) searchUrl.searchParams.append("price_max", maxPrice.toString());
   
-  // Add room type
-  // if (roomType) {
-  //   const roomTypeParam = roomType.toLowerCase().replace(/\s+/g, '_');
-  //   searchUrl.searchParams.append("room_types[]", roomTypeParam);
-  // }
-
   // Add cursor for pagination
   if (cursor) {
     searchUrl.searchParams.append("cursor", cursor);
@@ -288,7 +361,11 @@ async function handleAirbnbSearch(params: any) {
   };
 
   try {
-    const response = await fetchWithUserAgent(searchUrl.toString());
+    // First, fetch the main page to get cookies
+    await fetchWithBrowserHeaders(BASE_URL);
+    
+    // Then perform the search
+    const response = await fetchWithBrowserHeaders(searchUrl.toString());
     const html = await response.text();
     const $ = cheerio.load(html);
     
@@ -363,6 +440,9 @@ async function handleAirbnbListingDetails(params: any) {
     listingUrl.searchParams.append("adults", adults_int.toString());
     listingUrl.searchParams.append("children", children_int.toString());
     listingUrl.searchParams.append("infants", infants_int.toString());
+    listingUrl.searchParams.append("adults", adults_int.toString());
+    listingUrl.searchParams.append("children", children_int.toString());
+    listingUrl.searchParams.append("infants", infants_int.toString());
     listingUrl.searchParams.append("pets", pets_int.toString());
   }
 
@@ -420,7 +500,19 @@ async function handleAirbnbListingDetails(params: any) {
   };
 
   try {
-    const response = await fetchWithUserAgent(listingUrl.toString());
+    // First hit the main page to establish cookies and session
+    await fetchWithBrowserHeaders(BASE_URL);
+    
+    // Then add a small delay to mimic human navigation
+    await new Promise(resolve => setTimeout(resolve, 500 + Math.random() * 1000));
+    
+    // Now fetch the listing details with proper referrer
+    const response = await fetchWithBrowserHeaders(listingUrl.toString(), {
+      headers: {
+        'Referer': `${BASE_URL}/s/${encodeURIComponent('homes')}`
+      }
+    });
+    
     const html = await response.text();
     const $ = cheerio.load(html);
     
@@ -484,6 +576,19 @@ console.error(
   `Server started with options: ${IGNORE_ROBOTS_TXT ? "ignore-robots-txt" : "respect-robots-txt"}`
 );
 
+// Initialize the browser session
+async function initializeBrowserSession() {
+  // First visit to establish cookies and session
+  try {
+    console.error("Initializing browser session...");
+    await fetchWithBrowserHeaders(BASE_URL);
+    await fetchRobotsTxt();
+    console.error("Browser session initialized successfully");
+  } catch (error) {
+    console.error("Error initializing browser session:", error);
+  }
+}
+
 // Set up request handlers
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: AIRBNB_TOOLS,
@@ -491,11 +596,6 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   try {
-    // Ensure robots.txt is loaded
-    if (!robotsTxtContent) {
-      await fetchRobotsTxt();
-    }
-
     switch (request.params.name) {
       case "airbnb_search": {
         return await handleAirbnbSearch(request.params.arguments);
@@ -524,6 +624,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
 async function runServer() {
   const transport = new StdioServerTransport();
+  
+  // Initialize browser session before starting the server
+  await initializeBrowserSession();
+  
   await server.connect(transport);
   console.error("Airbnb MCP Server running on stdio");
 }
