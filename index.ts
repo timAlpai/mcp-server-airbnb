@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-
+import fetch, { RequestInit, Response } from "node-fetch";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
@@ -214,13 +214,16 @@ function getCookieString() {
     .join('; ');
 }
 
-// Enhanced fetch function with browser-like headers and manual redirect handling
-async function fetchWithBrowserHeaders(url, options = {}, redirectCount = 0) {
+async function fetchWithBrowserHeaders(
+  url: string,
+  options: RequestInit = {},
+  redirectCount: number = 0
+): Promise<Response> {
   const MAX_REDIRECTS = 5;
   const urlObj = new URL(url);
 
   // Headers réalistes type navigateur
-  const headers = {
+  const headers: Record<string, string> = {
     ...COMMON_HEADERS,
     "Host": urlObj.hostname,
     "Referer": urlObj.origin,
@@ -239,17 +242,17 @@ async function fetchWithBrowserHeaders(url, options = {}, redirectCount = 0) {
 
   const response = await fetch(url, {
     ...options,
-    redirect: "manual", // très important pour intercepter 307
+    redirect: "manual",
     headers: {
       ...headers,
-      ...(options.headers || {}),
+      ...(options.headers as Record<string, string> || {})
     },
   });
 
   // Stocke les cookies posés avant redirection éventuelle
   parseCookies(response);
 
-  // Gère les redirections manuellement (307, 302, 301)
+  // Gère les redirections manuellement
   if (
     response.status === 307 ||
     response.status === 302 ||
@@ -268,7 +271,7 @@ async function fetchWithBrowserHeaders(url, options = {}, redirectCount = 0) {
     const redirectedUrl = new URL(location, url).toString();
     console.error(`Redirect ${response.status} to ${redirectedUrl}`);
 
-    // Appel récursif avec le nouvel URL et redirection incrémentée
+    // Appel récursif
     return await fetchWithBrowserHeaders(redirectedUrl, options, redirectCount + 1);
   }
 
