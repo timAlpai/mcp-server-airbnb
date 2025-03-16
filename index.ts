@@ -214,41 +214,67 @@ function getCookieString() {
     .join('; ');
 }
 
-// Enhanced fetch function with browser-like headers
-async function fetchWithBrowserHeaders(url: string, options: any = {}) {
-  // Create a new URL object to extract the hostname
+// Enhanced fetch function with browser-like headers and manual redirect handling
+async function fetchWithBrowserHeaders(url, options = {}, redirectCount = 0) {
+  const MAX_REDIRECTS = 5;
   const urlObj = new URL(url);
-  
-  // Add referer only for non-initial requests
+
+  // Headers réalistes type navigateur
   const headers = {
     ...COMMON_HEADERS,
     "Host": urlObj.hostname,
     "Referer": urlObj.origin,
     "Origin": urlObj.origin,
+    "TE": "trailers", // certains anti-bot checkent sa présence
   };
 
-  // Add cookies if we have them
+  // Ajout des cookies en mémoire
   const cookieString = getCookieString();
   if (cookieString) {
     headers["Cookie"] = cookieString;
   }
 
-  // Add a slight delay to mimic human behavior (100-300ms)
+  // Petite pause pour simuler un humain
   await new Promise(resolve => setTimeout(resolve, 100 + Math.random() * 200));
 
   const response = await fetch(url, {
     ...options,
+    redirect: "manual", // très important pour intercepter 307
     headers: {
       ...headers,
-      ...(options.headers || {})
-    }
+      ...(options.headers || {}),
+    },
   });
 
-  // Save cookies for future requests
+  // Stocke les cookies posés avant redirection éventuelle
   parseCookies(response);
-  
+
+  // Gère les redirections manuellement (307, 302, 301)
+  if (
+    response.status === 307 ||
+    response.status === 302 ||
+    response.status === 301
+  ) {
+    if (redirectCount >= MAX_REDIRECTS) {
+      throw new Error(`Too many redirects while fetching ${url}`);
+    }
+
+    const location = response.headers.get("location");
+
+    if (!location) {
+      throw new Error(`Redirect status ${response.status} but no Location header`);
+    }
+
+    const redirectedUrl = new URL(location, url).toString();
+    console.error(`Redirect ${response.status} to ${redirectedUrl}`);
+
+    // Appel récursif avec le nouvel URL et redirection incrémentée
+    return await fetchWithBrowserHeaders(redirectedUrl, options, redirectCount + 1);
+  }
+
   return response;
 }
+
 
 // API handlers
 async function handleAirbnbSearch(params: any) {
