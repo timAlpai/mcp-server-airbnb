@@ -155,7 +155,7 @@ const COMMON_HEADERS = {
   "Cache-Control": "max-age=0"
 };
 
-const BASE_URL = "https://www.airbnb.com";
+const BASE_URL = "https://www.airbnb.ca";
 
 const args = process.argv.slice(2);
 const IGNORE_ROBOTS_TXT = args.includes("--ignore-robots-txt");
