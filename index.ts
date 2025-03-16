@@ -166,15 +166,17 @@ let robotsTxtContent = "";
 // Simple robots.txt fetch
 async function fetchRobotsTxt() {
   if (IGNORE_ROBOTS_TXT) {
+    console.error("Ignoring robots.txt");
     return;
   }
 
   try {
     const response = await fetchWithBrowserHeaders(`${BASE_URL}/robots.txt`);
     robotsTxtContent = await response.text();
+    console.error("Fetched robots.txt:\n", robotsTxtContent.slice(0, 500)); // log les 500 premiers caractères
   } catch (error) {
     console.error("Error fetching robots.txt:", error);
-    robotsTxtContent = ""; // Empty robots.txt means everything is allowed
+    robotsTxtContent = "";
   }
 }
 
