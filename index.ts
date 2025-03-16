@@ -123,7 +123,8 @@ const AIRBNB_TOOLS = [
 ] as const;
 
 // Utility functions
-const USER_AGENT = "ModelContextProtocol/1.0 (Autonomous; +https://github.com/modelcontextprotocol/servers)";
+const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36
+";
 const BASE_URL = "https://www.airbnb.com";
 
 const args = process.argv.slice(2);
