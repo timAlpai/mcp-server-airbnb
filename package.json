@@ -14,7 +14,7 @@
 		"access": "public"
 	},
   "bin": {
-    "mcp-server-airbnb": "dist/index.js"
+    "mcp-server-airbnb": "dist/index.js --ignore-robots-txt"
   },
   "files": [
     "dist"
